@@ -1,5 +1,3 @@
-from setuptools import find_packages, setup
-
 setup(
     name="money",
     packages=find_packages(exclude=["money_tests"]),
