@@ -511,15 +511,17 @@ O sistema de logs foi implementado conforme as especificações:
 
 ```
 <p align="center">
-  <img src="money/img/projeto_money4.png" alt="Menu da aplicação standalone" width="800">
+  <img src="money/img/projeto_money4.png" alt="Menu da aplicação standalone" width="800">]
 </p>
+
+<!--
 <p align="center">
   <img src="money/img/projeto_money6.png" alt="Menu da aplicação standalone" width="800">
 </p>
 
 <p align="center">
   <img src="money/img/projeto_money5.png" alt="Execução de Job no Dagster" width="800">
-</p>
+</p>-->
 
 ### Métricas Capturadas
 
