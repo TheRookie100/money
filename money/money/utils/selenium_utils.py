@@ -1,10 +1,4 @@
-# Este arquivo conterá uma versão limpa do seu código BCBAutomation
-# adaptado para funcionar como um utilitário no contexto do Dagster
-import openpyxl
-
-# Este arquivo conterá uma versão limpa do seu código BCBAutomation
-# adaptado para funcionar como um utilitário no contexto do Dagster
-
+# Este arquivo contém a implementação da automação de cotações do Banco Central
 import os
 import time
 import logging
@@ -27,271 +21,11 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 from dataclasses import dataclass
 
-# Configuração de logs - simplificada para uso com Dagster
-logger = logging.getLogger("currency_automation")
-
-# Classes para representação dos dados
-
-
-@dataclass
-class CurrencyPair:
-    """Representa um par de moedas para conversão"""
-    from_currency: str
-    to_currency: str
-
-    def __str__(self) -> str:
-        return f"{self.from_currency} para {self.to_currency}"
-
-
-@dataclass
-class ExchangeRate:
-    """Representa uma cotação de moeda"""
-    from_currency: str
-    to_currency: str
-    rate_value: float
-    rate_date: date
-    status: str
-    execution_time: Optional[float] = None
-
-    def to_dict(self) -> dict:
-        """Converte para dicionário (para exportação em Excel)"""
-        return {
-            "Moeda entrada": self.from_currency,
-            "Taxa": 1,
-            "Moeda saída": self.to_currency,
-            "Valor cotação": round(self.rate_value, 3) if self.rate_value else 0,
-            "Data": self.rate_date.strftime("%d/%m/%Y") if isinstance(self.rate_date, date) else self.rate_date,
-            "Status": self.status
-        }
-
-
-class BCBAutomation:
-    """Classe principal para automação de cotações do Banco Central"""
-
-    def __init__(self, headless: bool = True, debug_screenshots: bool = False):
-        self.url = "https://www.bcb.gov.br/conversao"
-        self.headless = headless
-        self.debug_screenshots = debug_screenshots
-        self.driver = None
-
-        # Diretórios de entrada e saída - adaptados para estrutura Dagster
-        self.input_dir = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))), "assets", "input")
-        self.output_dir = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))), "assets", "output")
-        self.screenshots_dir = os.path.join(os.path.dirname(os.path.dirname(
-            os.path.dirname(os.path.abspath(__file__)))), "assets", "screenshots")
-
-        # Garante que os diretórios existem
-        os.makedirs(self.input_dir, exist_ok=True)
-        os.makedirs(self.output_dir, exist_ok=True)
-        if self.debug_screenshots:
-            os.makedirs(self.screenshots_dir, exist_ok=True)
-
-    def setup_driver(self):
-        """Configura o driver do Selenium com opções otimizadas"""
-        options = webdriver.ChromeOptions()
-        if self.headless:
-            options.add_argument("--headless=new")
-        options.add_argument("--no-sandbox")
-        options.add_argument("--disable-dev-shm-usage")
-        options.add_argument("--disable-gpu")
-        options.add_argument("--window-size=1920,1080")
-        options.add_argument("--start-maximized")
-
-        # Desabilitar mensagens de console desnecessárias
-        options.add_experimental_option('excludeSwitches', ['enable-logging'])
-
-        # Adicionar user-agent para parecer mais com um navegador real
-        options.add_argument(
-            "--user-agent=Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/136.0.0.0 Safari/537.36")
-
-        try:
-            self.driver = webdriver.Chrome(
-                service=Service(ChromeDriverManager().install()),
-                options=options
-            )
-
-            # Define um timeout de página padrão mais alto
-            self.driver.set_page_load_timeout(60)
-
-            # Maximiza a janela para maior garantia que elementos serão visíveis
-            self.driver.maximize_window()
-
-            logger.info("Driver do Selenium configurado com sucesso")
-        except Exception as e:
-            error_msg = f"Erro ao configurar driver: {str(e)}"
-            logger.error(error_msg)
-            raise
-
-    def close_driver(self):
-        """Fecha o driver do Selenium"""
-        if self.driver:
-            try:
-                self.driver.quit()
-                self.driver = None
-                logger.info("Driver do Selenium fechado")
-            except Exception as e:
-                logger.error(f"Erro ao fechar o driver: {str(e)}")
-
-    def take_screenshot(self, name: str):
-        """Captura screenshot para debug"""
-        if self.debug_screenshots and self.driver:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            filename = f"{self.screenshots_dir}/{name}_{timestamp}.png"
-            try:
-                self.driver.save_screenshot(filename)
-            except Exception:
-                pass
-
-    def _close_banners(self):
-        """Tenta fechar banners/avisos que possam estar atrapalhando"""
-        try:
-            # Aguarda um pouco para garantir que os banners são carregados
-            time.sleep(3)
-
-            # Lista de seletores específicos para o banner de cookies do BCB
-            cookie_selectors = [
-                # Seletor por classe específica
-                (By.CSS_SELECTOR, "button.btn-primary.btn-accept"),
-                # XPath exato
-                (By.XPATH,
-                 "/html/body/app-root/bcb-cookies/div/div/div/div/button[2]"),
-                # Seletor por texto
-                (By.XPATH, "//button[contains(text(), 'Prosseguir')]"),
-                # Seletor combinado
-                (By.XPATH,
-                 "//div[contains(@class, 'text-center')]/button[contains(@class, 'btn-accept')]"),
-            ]
-
-            # Tenta cada seletor até encontrar e clicar no botão
-            for by, selector in cookie_selectors:
-                try:
-                    elements = self.driver.find_elements(by, selector)
-                    for element in elements:
-                        if element.is_displayed():
-                            # Tenta clicar de várias maneiras
-                            try:
-                                element.click()
-                                return
-                            except:
-                                try:
-                                    self.driver.execute_script(
-                                        "arguments[0].click();", element)
-                                    return
-                                except:
-                                    pass
-                except:
-                    continue
-
-        except:
-            # Não falha a execução por erro nesta etapa
-            pass
-
-    def read_currency_pairs(self):
-        """Lê os pares de moedas do arquivo Excel"""
-        filepath = os.path.join(self.input_dir, "currencies.xlsx")
-
-        try:
-            # Verifica se a dependência openpyxl está disponível
-            try:
-                import openpyxl
-            except ImportError:
-                logger.error(
-                    "Pacote 'openpyxl' não encontrado. Este pacote é necessário para ler arquivos Excel.")
-                logger.error(
-                    "Por favor, instale-o usando: pip install openpyxl")
-                raise ValueError(
-                    "Dependência necessária não encontrada: openpyxl. Use 'pip install openpyxl' para instalar.")
-
-            # Verifica se o arquivo existe no diretório raiz primeiro
-            if os.path.exists("currencies.xlsx"):
-                filepath = "currencies.xlsx"
-                logger.info(
-                    f"Usando arquivo de moedas do diretório raiz: {filepath}")
-            elif not os.path.exists(filepath):
-                logger.warning(
-                    f"Arquivo {filepath} não encontrado. Criando arquivo de exemplo.")
-                filepath = self.create_sample_input_file()
-
-            df = pd.read_excel(filepath)
-
-            # Tenta determinar os nomes das colunas
-            if "Moeda Origem" in df.columns and "Moeda Destino" in df.columns:
-                column_from = "Moeda Origem"
-                column_to = "Moeda Destino"
-            elif "from" in df.columns and "to" in df.columns:
-                column_from = "from"
-                column_to = "to"
-            else:
-                # Usa as duas primeiras colunas
-                if len(df.columns) >= 2:
-                    column_from = df.columns[0]
-                    column_to = df.columns[1]
-                else:
-                    raise ValueError(
-                        "Arquivo precisa ter pelo menos duas colunas")
-
-            # Converte para lista de pares de moedas
-            currency_pairs = [
-                CurrencyPair(
-                    from_currency=str(row[column_from]),
-                    to_currency=str(row[column_to])
-                )
-                for _, row in df.iterrows()
-            ]
-
-            logger.info(f"Lidos {len(currency_pairs)} pares de moedas")
-            return currency_pairs
-
-        except Exception as e:
-            error_msg = f"Erro ao ler arquivo {filepath}: {str(e)}"
-            logger.error(error_msg)
-
-            # Se o erro for relacionado a openpyxl, forneça uma mensagem mais clara
-            if "openpyxl" in str(e):
-                raise ValueError(
-                    "Erro ao ler arquivo Excel: pacote 'openpyxl' não instalado. "
-                    "Execute 'pip install openpyxl' no terminal para resolver este problema."
-                )
-
-            raise ValueError("Erro ao ler pares de moedas: " + str(e))
-
-    def create_sample_input_file(self, force=False):
-        """Cria um arquivo de exemplo com pares de moedas."""
-        file_path = os.path.join(self.input_dir, "currencies.xlsx")
-
-        if os.path.exists(file_path) and not force:
-            logger.info(f"Arquivo {file_path} já existe.")
-            return file_path
-
-        logger.info("Criando arquivo de exemplo com pares de moedas")
-
-        # Cria DataFrame com pares de exemplo
-        data = {
-            'Moeda Origem': ['USD', 'EUR', 'GBP', 'JPY', 'BRL'],
-            'Moeda Destino': ['BRL', 'BRL', 'BRL', 'BRL', 'USD']
-        }
-
-        # Garante que o diretório existe
-        os.makedirs(os.path.dirname(file_path), exist_ok=True)
-
-        # Salva o DataFrame como Excel
-        df = pd.DataFrame(data)
-        df.to_excel(file_path, index=False)
-
-        logger.info(f"Arquivo de exemplo criado em {file_path}")
-
-        return file_path
-
-    import os
-
-
 # Configuração para lidar com caracteres especiais nos logs
 sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
 sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
 
-# Configuração de logging formatada conforme solicitado
+# Configuração de logging formatada
 log_dir = "logs"
 os.makedirs(log_dir, exist_ok=True)
 log_file = os.path.join(
@@ -324,8 +58,6 @@ debug_logger.addHandler(debug_handler)
 debug_logger.setLevel(logging.DEBUG)
 
 # Classes para representação dos dados
-
-
 @dataclass
 class CurrencyPair:
     """Representa um par de moedas para conversão"""
@@ -393,9 +125,8 @@ def log_query_error(currency_pair: CurrencyPair, error: str, execution_time: Opt
     time_info = f" - Tempo: {execution_time:.1f}s" if execution_time else ""
     logger.error(f"CONSULTA - {currency_pair} - ERRO - {error}{time_info}")
 
-# Função para logs técnicos detalhados (que vão para o arquivo de debug)
 
-
+# Função para logs técnicos detalhados
 def debug_log(level, message, exc_info=None):
     """Registra mensagens técnicas detalhadas no log de debug"""
     if level == "INFO":
@@ -419,10 +150,13 @@ class BCBAutomation:
         self.debug_screenshots = debug_screenshots
         self.driver = None
 
-        # Diretórios de entrada e saída
-        self.input_dir = "assets/input"
-        self.output_dir = "assets/output"
-        self.screenshots_dir = "assets/screenshots"
+        # Diretórios de entrada e saída - adaptados para estrutura Dagster
+        self.input_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "assets", "input")
+        self.output_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "assets", "output")
+        self.screenshots_dir = os.path.join(os.path.dirname(os.path.dirname(
+            os.path.dirname(os.path.abspath(__file__)))), "assets", "screenshots")
 
         # Garante que os diretórios existem
         os.makedirs(self.input_dir, exist_ok=True)
@@ -590,6 +324,17 @@ class BCBAutomation:
         filepath = os.path.join(self.input_dir, "currencies.xlsx")
 
         try:
+            # Verifica se a dependência openpyxl está disponível
+            try:
+                import openpyxl
+            except ImportError:
+                logger.error(
+                    "Pacote 'openpyxl' não encontrado. Este pacote é necessário para ler arquivos Excel.")
+                logger.error(
+                    "Por favor, instale-o usando: pip install openpyxl")
+                raise ValueError(
+                    "Dependência necessária não encontrada: openpyxl. Use 'pip install openpyxl' para instalar.")
+
             # Verifica se o arquivo existe no diretório raiz primeiro
             if os.path.exists("currencies.xlsx"):
                 filepath = "currencies.xlsx"
@@ -639,6 +384,14 @@ class BCBAutomation:
         except Exception as e:
             error_msg = f"Erro ao ler arquivo {filepath}: {str(e)}"
             debug_log("ERROR", error_msg, exc_info=True)
+
+            # Se o erro for relacionado a openpyxl, forneça uma mensagem mais clara
+            if "openpyxl" in str(e):
+                raise ValueError(
+                    "Erro ao ler arquivo Excel: pacote 'openpyxl' não instalado. "
+                    "Execute 'pip install openpyxl' no terminal para resolver este problema."
+                )
+
             raise ValueError("Erro ao ler pares de moedas: " + str(e))
 
     def create_sample_input_file(self, force=False):
@@ -1457,276 +1210,3 @@ if __name__ == "__main__":
         print(f"Erro fatal: {str(e)}")
         debug_log(
             "CRITICAL", f"Erro fatal na inicialização: {traceback.format_exc()}", exc_info=True)
-
-    def get_exchange_rate(self, currency_pair: CurrencyPair, rate_date: Optional[date] = None) -> ExchangeRate:
-        """Obtém a taxa de câmbio para o par de moedas especificado"""
-        if not rate_date:
-            rate_date = date.today()
-
-        start_time = time.time()
-        logger.info(f"CONSULTA - {currency_pair} - INÍCIO")
-
-        try:
-            if not self.driver:
-                self.setup_driver()
-
-            # Acessa a página e aguarda carregar
-            self.driver.get(self.url)
-            wait = WebDriverWait(self.driver, 30)
-            wait.until(EC.presence_of_element_located(
-                (By.ID, "button-converter-de")))
-
-            # Tenta fechar banners
-            self._close_banners()
-
-            # Seleciona moedas
-            self._select_currency("button-converter-de",
-                                  currency_pair.from_currency)
-            self._select_currency("button-converter-para",
-                                  currency_pair.to_currency)
-
-            # Preenche data
-            date_input = None
-            try:
-                date_selectors = [
-                    "//input[@placeholder='DD/MM/AAAA']",
-                    "//input[contains(@class, 'form-control') and @type='text']"
-                ]
-
-                for selector in date_selectors:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for element in elements:
-                        if element.is_displayed():
-                            date_input = element
-                            break
-
-                if date_input:
-                    date_input.clear()
-                    date_str = rate_date.strftime('%d/%m/%Y')
-                    date_input.send_keys(date_str)
-            except:
-                pass
-
-            # Clica no botão de pesquisa
-            try:
-                search_button = None
-                button_selectors = [
-                    "//button[contains(text(), 'Converter')]",
-                    "//button[@type='submit']",
-                    "//button[contains(@class, 'btn-primary')]"
-                ]
-
-                for selector in button_selectors:
-                    elements = self.driver.find_elements(By.XPATH, selector)
-                    for element in elements:
-                        if element.is_displayed():
-                            search_button = element
-                            break
-
-                if search_button:
-                    self.driver.execute_script(
-                        "arguments[0].click();", search_button)
-            except:
-                pass
-
-            # Aguarda resultado
-            time.sleep(5)
-            self.take_screenshot("result")
-
-            # Extrai resultado
-            rate_value = 0.0
-            actual_date = rate_date
-
-            try:
-                result_container = self.driver.find_element(
-                    By.XPATH, "//div[contains(@class, 'card-body')]")
-                result_text = result_container.text
-
-                # Extrai valor da cotação
-                value_match = re.search(r'(\d+[,.]\d+)', result_text)
-                if value_match:
-                    value_str = value_match.group(
-                        1).replace(".", "").replace(",", ".")
-                    rate_value = float(value_str)
-
-                # Extrai data
-                date_match = re.search(r'(\d{2}/\d{2}/\d{4})', result_text)
-                if date_match:
-                    date_str = date_match.group(1)
-                    actual_date = datetime.strptime(
-                        date_str, "%d/%m/%Y").date()
-            except:
-                pass
-
-            execution_time = time.time() - start_time
-
-            # Define status com base no resultado
-            if rate_value > 0:
-                if actual_date != rate_date:
-                    status = "Cotação encontrada não é da data solicitada"
-                    logger.warning(
-                        f"CONSULTA - {currency_pair} - AVISO - Data diferente da solicitada - Tempo: {execution_time:.1f}s")
-                else:
-                    status = "Consulta ok"
-                    logger.info(
-                        f"CONSULTA - {currency_pair} - CONCLUÍDO - Tempo: {execution_time:.1f}s - Valor: {rate_value:.3f}")
-            else:
-                status = "Valor não encontrado"
-                logger.warning(
-                    f"CONSULTA - {currency_pair} - AVISO - Valor não encontrado - Tempo: {execution_time:.1f}s")
-
-            return ExchangeRate(
-                from_currency=currency_pair.from_currency,
-                to_currency=currency_pair.to_currency,
-                rate_value=rate_value,
-                rate_date=actual_date,
-                status=status,
-                execution_time=execution_time
-            )
-
-        except Exception as e:
-            execution_time = time.time() - start_time
-            logger.error(
-                f"CONSULTA - {currency_pair} - ERRO - {str(e)} - Tempo: {execution_time:.1f}s")
-
-            # Captura screenshot do erro
-            self.take_screenshot(
-                f"error_{currency_pair.from_currency}_{currency_pair.to_currency}")
-
-            return ExchangeRate(
-                from_currency=currency_pair.from_currency,
-                to_currency=currency_pair.to_currency,
-                rate_value=0.0,
-                rate_date=rate_date,
-                status=f"Erro: {str(e)}",
-                execution_time=execution_time
-            )
-
-    def extract_all_exchange_rates(self, currency_pairs: List[CurrencyPair], rate_date: Optional[date] = None) -> List[ExchangeRate]:
-        """Extrai cotações para uma lista de pares de moedas"""
-        if not rate_date:
-            rate_date = date.today()
-
-        logger.info("INÍCIO - Processamento de cotações")
-
-        results = []
-        success_count = 0
-        warning_count = 0
-        error_count = 0
-
-        try:
-            self.setup_driver()
-
-            for currency_pair in currency_pairs:
-                try:
-                    exchange_rate = self.get_exchange_rate(
-                        currency_pair=currency_pair,
-                        rate_date=rate_date
-                    )
-
-                    results.append(exchange_rate)
-
-                    if exchange_rate.rate_value > 0:
-                        if "não é da data" in exchange_rate.status:
-                            warning_count += 1
-                        else:
-                            success_count += 1
-                    else:
-                        error_count += 1
-
-                except Exception as e:
-                    error_count += 1
-                    results.append(
-                        ExchangeRate(
-                            from_currency=currency_pair.from_currency,
-                            to_currency=currency_pair.to_currency,
-                            rate_value=0.0,
-                            rate_date=rate_date,
-                            status=f"Erro: {str(e)}"
-                        )
-                    )
-
-                # Delay entre consultas
-                time.sleep(2)
-
-            logger.info(
-                f"FIM - Processamento de cotações - Total: {len(currency_pairs)} consultas, {success_count} ok, {warning_count} com avisos, {error_count} com erros")
-            return results
-
-        finally:
-            self.close_driver()
-
-    def write_exchange_rates(self, exchange_rates: List[ExchangeRate], filename: Optional[str] = None) -> str:
-        """Escreve as cotações em arquivo Excel"""
-        try:
-            timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-            today = datetime.now().strftime("%Y%m%d")
-
-            # Gera nome do arquivo
-            if not filename:
-                filename = f"exchange_rates_{today}_{timestamp}.xlsx"
-
-            output_path = os.path.join(self.output_dir, filename)
-            main_dir_path = os.path.join(os.path.dirname(
-                os.path.abspath(__file__)), filename)
-
-            # Cria diretório de saída
-            os.makedirs(self.output_dir, exist_ok=True)
-
-            # Cria DataFrame
-            data = [rate.to_dict() for rate in exchange_rates]
-            df = pd.DataFrame(data)
-
-            # Salva o arquivo
-            df.to_excel(output_path, index=False)
-            logger.info(f"Arquivo Excel gerado com sucesso em: {output_path}")
-
-            # Copia para diretório principal
-            try:
-                df.to_excel(main_dir_path, index=False)
-                logger.info(f"Arquivo Excel também salvo em: {main_dir_path}")
-            except:
-                pass
-
-            return output_path
-
-        except Exception as e:
-            logger.error(f"Erro ao gerar arquivo Excel: {str(e)}")
-
-            # Tenta salvar em local alternativo
-            try:
-                alt_filename = f"exchange_rates_{datetime.now().strftime('%Y%m%d_%H%M%S')}.xlsx"
-                alt_path = os.path.join(os.path.dirname(
-                    os.path.abspath(__file__)), alt_filename)
-                df.to_excel(alt_path, index=False)
-                logger.info(
-                    f"Arquivo Excel salvo em local alternativo: {alt_path}")
-                return alt_path
-            except:
-                raise ValueError(f"Falha ao salvar arquivo Excel: {str(e)}")
-
-    def run(self):
-        """Executa o fluxo completo de automação"""
-        try:
-            start_time = time.time()
-            logger.info("Iniciando automação de cotações do Banco Central")
-
-            # Lê os pares de moedas
-            currency_pairs = self.read_currency_pairs()
-
-            # Extrai as cotações
-            exchange_rates = self.extract_all_exchange_rates(currency_pairs)
-
-            # Gera o relatório
-            output_file = self.write_exchange_rates(exchange_rates)
-
-            # Tempo de execução
-            elapsed_time = time.time() - start_time
-
-            logger.info(
-                f"Automação concluída com sucesso em {elapsed_time:.2f} segundos. Relatório gerado em {output_file}")
-            return output_file
-
-        except Exception as e:
-            logger.error(f"Erro na execução da automação: {str(e)}")
-            raise
