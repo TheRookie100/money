@@ -41,7 +41,7 @@ def setup_logging():
 
     # Nome do arquivo de log
     log_file = os.path.join(
-        LOGS_DIR, f"currency_automation_{date.today().strftime('%Y%m%d')}.log")
+        LOGS_DIR, f"money_{date.today().strftime('%Y%m%d')}.log")
 
     # Formato simplificado para os logs principais
     logging.basicConfig(
@@ -55,7 +55,7 @@ def setup_logging():
     )
 
     # Logger principal
-    logger = logging.getLogger("currency_automation")
+    logger = logging.getLogger("money")
 
     # Logger separado para logs detalhados/técnicos
     debug_logger = logging.getLogger("debug_logger")
