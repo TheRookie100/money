@@ -174,6 +174,7 @@ class MoedasSpider(scrapy.Spider):
                 'CHF': '756'
             }
             
+            # API
             if pair.from_currency in currency_codes and pair.to_currency == 'BRL':
                 url = f"https://olinda.bcb.gov.br/olinda/servico/PTAX/versao/v1/odata/CotacaoMoedaDia(moeda=@moeda,dataCotacao=@dataCotacao)?@moeda='{pair.from_currency}'&@dataCotacao='{today}'&$top=1&$orderby=dataHoraCotacao%20desc&$format=json&$select=cotacaoCompra,cotacaoVenda,dataHoraCotacao"
                 

@@ -10,6 +10,7 @@ import uuid
 import re
 import traceback
 import hashlib
+import atexit
 from datetime import date, datetime
 from typing import List, Dict, Any, Tuple, Optional
 from selenium import webdriver
@@ -21,9 +22,51 @@ from selenium.common.exceptions import TimeoutException, NoSuchElementException,
 from webdriver_manager.chrome import ChromeDriverManager
 from dataclasses import dataclass
 
-# Configuração para lidar com caracteres especiais nos logs
-sys.stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8')
-sys.stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8')
+# Salva os streams originais antes de qualquer redirecionamento
+_original_stdout = sys.stdout
+_original_stderr = sys.stderr
+
+# Função para restaurar streams originais
+def restore_streams():
+    """Restaura os streams originais antes de encerrar"""
+    try:
+        sys.stdout = _original_stdout
+        sys.stderr = _original_stderr
+    except:
+        pass
+
+# Registra a função de limpeza para ser executada ao sair
+atexit.register(restore_streams)
+
+# Configuração segura para lidar com caracteres especiais nos logs
+def setup_safe_streams():
+    """Configura os streams de forma segura"""
+    try:
+        # Verifica se já foi configurado
+        if hasattr(sys.stdout, '_is_wrapped') and sys.stdout._is_wrapped:
+            return
+            
+        # Só faz o redirecionamento se necessário
+        if hasattr(sys.stdout, 'buffer') and hasattr(sys.stderr, 'buffer'):
+            try:
+                new_stdout = io.TextIOWrapper(sys.stdout.buffer, encoding='utf-8', errors='replace')
+                new_stderr = io.TextIOWrapper(sys.stderr.buffer, encoding='utf-8', errors='replace')
+                
+                # Marca como wrapped para evitar redirecionamento duplo
+                new_stdout._is_wrapped = True
+                new_stderr._is_wrapped = True
+                
+                sys.stdout = new_stdout
+                sys.stderr = new_stderr
+            except (AttributeError, ValueError, OSError):
+                # Se não conseguir redirecionar, mantém o original
+                pass
+    except Exception:
+        # Em caso de erro, mantém os streams originais
+        pass
+
+# Chama a configuração segura
+setup_safe_streams()
 
 # Configuração de logging formatada
 log_dir = "logs"
@@ -1080,10 +1123,29 @@ class BCBAutomation:
             raise
 
 
-def main():
-    """Menu principal"""
+def safe_input(prompt=""):
+    """Input seguro que não causa problemas com streams"""
     try:
-        os.system('cls' if os.name == 'nt' else 'clear')
+        # Força o flush dos streams antes do input
+        sys.stdout.flush()
+        sys.stderr.flush()
+        return input(prompt)
+    except (EOFError, KeyboardInterrupt):
+        return ""
+    except Exception:
+        # Em caso de erro, simula o ENTER
+        return ""
+
+
+def main():
+    """Menu principal com tratamento seguro de streams"""
+    try:
+        # Garante que os streams estão funcionando
+        try:
+            os.system('cls' if os.name == 'nt' else 'clear')
+        except:
+            pass
+            
         print("\n====== AUTOMAÇÃO DE COTAÇÕES DO BANCO CENTRAL ======")
         print("1. Executar automação completa")
         print("2. Debug do banner de cookies")
@@ -1092,7 +1154,7 @@ def main():
         print("5. Recriar arquivo de exemplo de cotações (substituir existente)")
         print("0. Sair")
 
-        option = input("\nEscolha uma opção: ")
+        option = safe_input("\nEscolha uma opção: ")
 
         if option == "1":
             try:
@@ -1106,37 +1168,30 @@ def main():
 
             except Exception as e:
                 print(f"\nErro na execução da automação: {str(e)}")
-                debug_log(
-                    "ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
+                debug_log("ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
 
         elif option == "2":
             try:
                 print("\n--- INICIANDO DEBUG DO BANNER DE COOKIES ---")
-                # Código simplificado de debug do banner
-                automation = BCBAutomation(
-                    headless=False, debug_screenshots=True)
+                automation = BCBAutomation(headless=False, debug_screenshots=True)
                 automation.setup_driver()
 
                 try:
                     automation.driver.get("https://www.bcb.gov.br/conversao")
                     time.sleep(5)
 
-                    # Salva screenshot
                     timestamp = datetime.now().strftime("%Y%m%d_%H%M%S")
                     filename = f"debug/initial_page_{timestamp}.png"
                     os.makedirs("debug", exist_ok=True)
                     automation.driver.save_screenshot(filename)
                     print(f"Screenshot inicial salvo: {filename}")
 
-                    # Tenta fechar o banner
                     automation._close_banners()
 
-                    # Aguarda para verificar resultado
                     time.sleep(5)
                     after_filename = f"debug/after_banner_close_{timestamp}.png"
                     automation.driver.save_screenshot(after_filename)
-                    print(
-                        f"Screenshot após interação com banner: {after_filename}")
+                    print(f"Screenshot após interação com banner: {after_filename}")
 
                     print("\nDebug do banner de cookies concluído!")
 
@@ -1145,8 +1200,7 @@ def main():
 
             except Exception as e:
                 print(f"\nErro no debug do banner: {str(e)}")
-                debug_log(
-                    "ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
+                debug_log("ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
 
         elif option == "3":
             try:
@@ -1155,14 +1209,12 @@ def main():
                 print(f"\nArquivo de exemplo criado em: {filepath}")
             except Exception as e:
                 print(f"\nErro ao criar arquivo de exemplo: {str(e)}")
-                debug_log(
-                    "ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
+                debug_log("ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
 
         elif option == "4":
             try:
                 start_time = time.time()
-                automation = BCBAutomation(
-                    headless=False, debug_screenshots=True)  # Navegador visível
+                automation = BCBAutomation(headless=False, debug_screenshots=True)
                 output_file = automation.run()
                 elapsed_time = time.time() - start_time
 
@@ -1171,8 +1223,7 @@ def main():
 
             except Exception as e:
                 print(f"\nErro na execução da automação: {str(e)}")
-                debug_log(
-                    "ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
+                debug_log("ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
 
         elif option == "5":
             try:
@@ -1181,26 +1232,30 @@ def main():
                 print(f"\nArquivo de exemplo recriado em: {filepath}")
             except Exception as e:
                 print(f"\nErro ao recriar arquivo de exemplo: {str(e)}")
-                debug_log(
-                    "ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
+                debug_log("ERROR", f"Erro detalhado: {traceback.format_exc()}", exc_info=True)
 
         elif option == "0":
             print("\nEncerrando programa...")
+            # Restaura streams antes de sair
+            restore_streams()
             return
 
         else:
             print("\nOpção inválida! Por favor, escolha uma opção válida.")
 
-        # Perguntar se deseja continuar
-        input("\nPressione ENTER para continuar...")
-        main()  # Chama recursivamente para voltar ao menu
+        # Input seguro para continuar
+        safe_input("\nPressione ENTER para continuar...")
+        
+        # Chama recursivamente para voltar ao menu
+        main()
 
     except KeyboardInterrupt:
         print("\nPrograma interrompido pelo usuário.")
+        restore_streams()
     except Exception as e:
         print(f"\nErro inesperado: {str(e)}")
-        debug_log(
-            "ERROR", f"Erro na interface principal: {traceback.format_exc()}", exc_info=True)
+        debug_log("ERROR", f"Erro na interface principal: {traceback.format_exc()}", exc_info=True)
+        restore_streams()
 
 
 if __name__ == "__main__":
@@ -1208,5 +1263,7 @@ if __name__ == "__main__":
         main()
     except Exception as e:
         print(f"Erro fatal: {str(e)}")
-        debug_log(
-            "CRITICAL", f"Erro fatal na inicialização: {traceback.format_exc()}", exc_info=True)
+        debug_log("CRITICAL", f"Erro fatal na inicialização: {traceback.format_exc()}", exc_info=True)
+    finally:
+        # Garante que os streams sejam restaurados
+        restore_streams()
