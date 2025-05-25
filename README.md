@@ -299,8 +299,8 @@ python -m money.main --implementation scrapy
 
 1. **Clone o repositório**:
    ```bash
-   git clone https://github.com/TheRookie100/auto_moedas.git
-   cd auto_moedas
+   git clone https://github.com/TheRookie100/money
+   cd money
    ```
 
 2. **Crie e ative um ambiente virtual**:
@@ -417,7 +417,7 @@ Escolha a opção digitando o número correspondente e pressionando Enter.
 
 1. **Iniciar o servidor Dagster**:
    ```bash
-   cd auto_moedas
+   cd money
    dagster dev
    ```
 
@@ -568,7 +568,7 @@ O sistema de logs foi implementado conforme as especificações:
 
 ## Considerações Finais
 
-O projeto "Auto Moedas" representa uma solução robusta para automatizar a consulta de cotações do Banco Central do Brasil. A utilização do Dagster como orquestrador trouxe benefícios significativos:
+O projeto "Money" representa uma solução robusta para automatizar a consulta de cotações do Banco Central do Brasil. A utilização do Dagster como orquestrador trouxe benefícios significativos:
 
 ### Principais Benefícios do Dagster
 
