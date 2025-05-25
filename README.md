@@ -426,7 +426,7 @@ Escolha a opção digitando o número correspondente e pressionando Enter.
 
 3. **Executar o pipeline completo**:
    - Na interface, selecione o job `bcb_exchange_rates_job`
-   - Clique em "Launch Run"
+   - Clique em "Materialize all"
    - Acompanhe o progresso em tempo real
 
 <p align="center">
