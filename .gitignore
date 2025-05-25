@@ -13,6 +13,7 @@ storage/
 .nux/
 history/
 money.egg-info/
+doc/
 
 # Arquivos de cache Python
 __pycache__/

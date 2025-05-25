@@ -105,7 +105,7 @@ A empresa enfrenta os seguintes desafios:
 A estrutura do projeto foi organizada para melhor integração com Dagster e oferecer múltiplas implementações (Selenium e Scrapy):
 
 ```
-auto_moedas/
+money/
 │
 ├── money/                     # Pacote principal
 │   ├── __init__.py
@@ -388,7 +388,7 @@ Para executar o projeto manualmente sem usar o Dagster:
 
 ```bash
 # Navegue até o diretório principal do projeto
-cd auto_moedas/money
+cd /money/money
 
 # Execução do módulo diretamente 
 python -m money.main
